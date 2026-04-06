@@ -229,6 +229,10 @@
   let replied = false;
   let oneSignalReady = null;
 
+  function isHomeScreenApp() {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  }
+
   window.OneSignalDeferred = window.OneSignalDeferred || [];
   oneSignalReady = new Promise((resolve) => {
     OneSignalDeferred.push(async function(OneSignal) {
@@ -277,17 +281,22 @@
 
     if (!OneSignal) return;
 
+    if (!isHomeScreenApp()) {
+      setNotificationStatus('Open Naztify from the Home Screen icon first.', true);
+      return;
+    }
+
     if (!OneSignal.Notifications.isPushSupported()) {
       setNotificationStatus('Push is not supported in this browser here.', true);
       return;
     }
 
     try {
-      await OneSignal.Notifications.requestPermission();
+      await OneSignal.Slidedown.promptPush({ force: true });
       if (OneSignal.Notifications.permission) {
         setNotificationStatus('Notifications enabled. You are all set.');
       } else {
-        setNotificationStatus('Permission was not granted yet.', true);
+        setNotificationStatus('Tap Allow when iPhone shows the permission prompt.', true);
       }
     } catch {
       setNotificationStatus('Could not enable notifications.', true);
