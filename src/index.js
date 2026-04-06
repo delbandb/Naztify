@@ -25,11 +25,13 @@ const PORT = Number(process.env.PORT || 3000);
 const DATA_PATH = path.join(__dirname, "..", "data", "messages.json");
 const TEMPLATE_DIR = path.join(__dirname, "..", "templates");
 const MANIFEST_PATH = path.join(__dirname, "..", "manifest.json");
+const PUBLIC_DIR = path.join(__dirname, "..", "public");
 
 app.use(pinoHttp({ logger }));
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.static(PUBLIC_DIR));
 
 function ensureDataDir() {
   fs.mkdirSync(path.dirname(DATA_PATH), { recursive: true });
@@ -60,7 +62,57 @@ function sendTemplate(res, fileName) {
     return;
   }
 
-  res.sendFile(filePath);
+  const html = fs
+    .readFileSync(filePath, "utf8")
+    .replaceAll(
+      "ONESIGNAL_APP_ID_PLACEHOLDER",
+      process.env.ONESIGNAL_APP_ID ?? "",
+    );
+
+  res.type("html").send(html);
+}
+
+async function notifyReceiver({ emoji, message, appUrl }) {
+  const appId = process.env.ONESIGNAL_APP_ID;
+  const apiKey =
+    process.env.ONESIGNAL_API_KEY ?? process.env.ONESIGNAL_REST_API_KEY;
+
+  if (!appId || !apiKey) {
+    logger.warn("OneSignal env vars not set; skipping push notification");
+    return;
+  }
+
+  try {
+    const response = await fetch("https://onesignal.com/api/v1/notifications", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${apiKey}`,
+      },
+      body: JSON.stringify({
+        app_id: appId,
+        included_segments: ["Total Subscriptions"],
+        headings: {
+          en: `${emoji || "💌"} Delband sent you a mood`,
+        },
+        contents: {
+          en: message || "Open Naztify to see it 💕",
+        },
+        url: `${appUrl}/receiver`,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      logger.warn({ data, status: response.status }, "OneSignal push failed");
+      return;
+    }
+
+    logger.info({ data }, "OneSignal notification sent");
+  } catch (error) {
+    logger.error({ error }, "Failed to send OneSignal notification");
+  }
 }
 
 app.get("/", (_req, res) => sendTemplate(res, "landing-page.html"));
@@ -82,7 +134,7 @@ app.get("/api/healthz", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-app.post("/api/send", (req, res) => {
+app.post("/api/send", async (req, res) => {
   const { moodId, message, emoji, color } = req.body;
   const db = loadDB();
   const entry = {
@@ -104,6 +156,8 @@ app.post("/api/send", (req, res) => {
   }
 
   saveDB(db);
+  const appUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+  await notifyReceiver({ emoji, message, appUrl });
   res.json({ success: true, entry });
 });
 

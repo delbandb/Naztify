@@ -7,7 +7,9 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="apple-mobile-web-app-title" content="💌"/>
   <title>💌</title>
+  <link rel="manifest" href="/manifest.json" />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <style>
     :root {
       --bg: #0e0a0d;
@@ -56,6 +58,38 @@
       color: rgba(240,232,236,0.5); margin-top: 4px;
     }
     .waiting-sub { font-size: 12px; color: var(--muted); letter-spacing: 0.4px; }
+    .notify-box {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(212,169,106,0.18);
+      border-radius: 18px;
+      padding: 14px;
+      margin-top: 8px;
+    }
+    .notify-copy {
+      font-size: 12px;
+      line-height: 1.5;
+      color: #bfa9b6;
+      margin-bottom: 10px;
+    }
+    .notify-btn {
+      width: 100%;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: linear-gradient(135deg, #d4a96a, #e8445a);
+      color: #fff;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .notify-status {
+      margin-top: 8px;
+      min-height: 18px;
+      font-size: 12px;
+      color: var(--muted);
+    }
 
     #message-view { display: none; width: 100%; }
 
@@ -159,6 +193,11 @@
     </svg>
     <p class="waiting-title">waiting for Delband</p>
     <p class="waiting-sub">please dandoon ru jigar bezar</p>
+    <div class="notify-box">
+      <p class="notify-copy">On iPhone, add Naztify to your Home Screen, open it from there, then tap below once to allow notifications.</p>
+      <button class="notify-btn" type="button" onclick="enableNotifications()">Enable notifications</button>
+      <div class="notify-status" id="notify-status"></div>
+    </div>
   </div>
 
   <div id="message-view">
@@ -176,6 +215,7 @@
 
 </div>
 <script>
+  const ONESIGNAL_APP_ID = "ONESIGNAL_APP_ID_PLACEHOLDER";
   const MOODS = {
     thinking: { yes:"I'm thinking about you too", yesEmoji:"👀", no:"Nemikham", noEmoji:"😒" },
     missing:  { yes:"I miss you too",              yesEmoji:"🥺", no:"Nemikham", noEmoji:"😒" },
@@ -187,6 +227,72 @@
   let currentMessage = null;
   let seenId = null;
   let replied = false;
+  let oneSignalReady = null;
+
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  oneSignalReady = new Promise((resolve) => {
+    OneSignalDeferred.push(async function(OneSignal) {
+      if (!ONESIGNAL_APP_ID) {
+        setNotificationStatus('Notifications are not configured yet.', true);
+        resolve(null);
+        return;
+      }
+
+      await OneSignal.init({
+        appId: ONESIGNAL_APP_ID,
+        serviceWorkerPath: "/OneSignalSDKWorker.js",
+        notifyButton: { enable: false },
+        allowLocalhostAsSecureOrigin: true,
+        promptOptions: {
+          slidedown: {
+            prompts: [{
+              type: "push",
+              autoPrompt: false,
+              text: {
+                actionMessage: "Allow Naztify to send you notifications",
+                acceptButton: "Allow",
+                cancelButton: "No thanks"
+              }
+            }]
+          }
+        }
+      });
+
+      if (OneSignal.Notifications.permission) {
+        setNotificationStatus('Notifications are already enabled.');
+      }
+
+      resolve(OneSignal);
+    });
+  });
+
+  function setNotificationStatus(message, isError = false) {
+    const el = document.getElementById('notify-status');
+    el.textContent = message;
+    el.style.color = isError ? '#ff8f8f' : '';
+  }
+
+  async function enableNotifications() {
+    const OneSignal = await oneSignalReady;
+
+    if (!OneSignal) return;
+
+    if (!OneSignal.Notifications.isPushSupported()) {
+      setNotificationStatus('Push is not supported in this browser here.', true);
+      return;
+    }
+
+    try {
+      await OneSignal.Notifications.requestPermission();
+      if (OneSignal.Notifications.permission) {
+        setNotificationStatus('Notifications enabled. You are all set.');
+      } else {
+        setNotificationStatus('Permission was not granted yet.', true);
+      }
+    } catch {
+      setNotificationStatus('Could not enable notifications.', true);
+    }
+  }
 
   function timeAgo(ms) {
     const s = Math.floor((Date.now() - ms) / 1000);
