@@ -5,82 +5,93 @@ import path from "path";
 const router = Router();
 const DB_PATH = path.resolve(process.cwd(), "db.json");
 const TEMPLATES = path.resolve(process.cwd(), "templates");
+const MANIFEST_PATH = path.resolve(process.cwd(), "manifest.json");
 
 function loadDB() {
-  try { if (fs.existsSync(DB_PATH)) return JSON.parse(fs.readFileSync(DB_PATH, "utf-8")); } catch {}
+  try {
+    if (fs.existsSync(DB_PATH)) {
+      return JSON.parse(fs.readFileSync(DB_PATH, "utf-8"));
+    }
+  } catch {}
+
   return { messages: [] };
 }
-function saveDB(db: any) { fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2)); }
 
-async function sendPush(message: string) {
-  const appId = process.env.ONESIGNAL_APP_ID;
-  const key = process.env.ONESIGNAL_REST_API_KEY;
-  const appUrl = process.env.APP_URL || "https://couple-connect--delbandbehdadf1.replit.app";
-  if (!appId || !key) return { ok: false, error: "Keys missing" };
-  try {
-    const r = await fetch("https://onesignal.com/api/v1/notifications", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Basic ${key}` },
-      body: JSON.stringify({
-        app_id: appId,
-        included_segments: ["Total Subscriptions"],
-        contents: { en: message },
-        headings: { en: "💌 from your love" },
-        url: `${appUrl}/her`,
-      }),
-    });
-    return { ok: true, data: await r.json() };
-  } catch (e: any) { return { ok: false, error: e.message }; }
+function saveDB(db: any) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
 }
 
-// Pages
-router.get("/dashboard", (_req, res) => {
-  const f = path.join(TEMPLATES, "dashboard.html");
-  if (fs.existsSync(f)) res.sendFile(f);
-  else res.status(404).send("Not Found");
+function sendTemplate(res: any, fileName: string) {
+  const filePath = path.join(TEMPLATES, fileName);
+
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+    return;
+  }
+
+  res.status(404).send("Not Found");
+}
+
+router.get("/", (_req, res) => sendTemplate(res, "landing-page.html"));
+router.get("/dashboard", (_req, res) => sendTemplate(res, "dashboard.html"));
+router.get("/sender", (_req, res) => sendTemplate(res, "dashboard.html"));
+router.get("/her", (_req, res) => sendTemplate(res, "her.html"));
+router.get("/receiver", (_req, res) => sendTemplate(res, "her.html"));
+
+router.get("/manifest.json", (_req, res) => {
+  if (fs.existsSync(MANIFEST_PATH)) {
+    res.type("application/manifest+json").sendFile(MANIFEST_PATH);
+    return;
+  }
+
+  res.status(404).send("Not Found");
 });
 
-router.get("/her", (_req, res) => {
-  const f = path.join(TEMPLATES, "her.html");
-  if (fs.existsSync(f)) res.sendFile(f);
-  else res.status(404).send("Not Found");
-});
-
-// OneSignal service worker
-router.get("/OneSignalSDKWorker.js", (_req, res) => {
-  const f = path.resolve(process.cwd(), "OneSignalSDKWorker.js");
-  if (fs.existsSync(f)) res.sendFile(f);
-  else res.status(404).send("Not Found");
-});
-
-// API: send mood
-router.post("/api/send", async (req, res) => {
+router.post("/api/send", (req, res) => {
   const { moodId, message, emoji, color } = req.body;
   const db = loadDB();
-  const entry = { id: Date.now().toString(), moodId, message, emoji, color, sentAt: Date.now(), reply: null, replyEmoji: null, replyAt: null };
+  const entry = {
+    id: Date.now().toString(),
+    moodId,
+    message,
+    emoji,
+    color,
+    sentAt: Date.now(),
+    reply: null,
+    replyEmoji: null,
+    replyAt: null,
+  };
+
   db.messages.unshift(entry);
-  if (db.messages.length > 50) db.messages = db.messages.slice(0, 50);
+
+  if (db.messages.length > 50) {
+    db.messages = db.messages.slice(0, 50);
+  }
+
   saveDB(db);
-  const push = await sendPush(`${emoji} ${message}`);
-  res.json({ success: true, entry, push });
+  res.json({ success: true, entry });
 });
 
-// API: her reply
 router.post("/api/reply", (req, res) => {
   const { messageId, reply, replyEmoji } = req.body;
   const db = loadDB();
-  const msg = db.messages.find((m: any) => m.id === messageId);
-  if (msg) { msg.reply = reply; msg.replyEmoji = replyEmoji; msg.replyAt = Date.now(); saveDB(db); }
+  const msg = db.messages.find((message: any) => message.id === messageId);
+
+  if (msg) {
+    msg.reply = reply;
+    msg.replyEmoji = replyEmoji;
+    msg.replyAt = Date.now();
+    saveDB(db);
+  }
+
   res.json({ success: true });
 });
 
-// API: latest message
 router.get("/api/latest", (_req, res) => {
   const db = loadDB();
   res.json({ message: db.messages[0] || null });
 });
 
-// API: dashboard status
 router.get("/api/status", (_req, res) => {
   const db = loadDB();
   res.json({ latest: db.messages[0] || null });

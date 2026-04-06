@@ -1,6 +1,6 @@
 {
-  "name": "Private Notifier",
-  "short_name": "Notifier",
+  "name": "Naztify",
+  "short_name": "Naztify",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0d0d0d",
