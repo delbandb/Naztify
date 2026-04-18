@@ -1,6 +1,8 @@
 # Naztify
 
-Naztify is a private real-time mood messenger for two people.
+Naztify is a private real-time mood messenger for my girlfriend and I.
+
+#Please keep in mind that this is a personal app with personal customization
 
 ## Run locally
 
