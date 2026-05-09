@@ -83,6 +83,12 @@ The app defaults to:
 http://localhost:3000
 ```
 
+Run the API test suite with:
+
+```bash
+npm test
+```
+
 ## Environment Variables
 
 Create a `.env` file based on `.env.example` if you want push notifications:

@@ -22,10 +22,16 @@ const logger = pino({
 });
 
 const PORT = Number(process.env.PORT || 3000);
-const DATA_PATH = path.join(__dirname, "..", "data", "messages.json");
+const DATA_PATH =
+  process.env.DATA_PATH || path.join(__dirname, "..", "data", "messages.json");
 const TEMPLATE_DIR = path.join(__dirname, "..", "templates");
 const MANIFEST_PATH = path.join(__dirname, "..", "manifest.json");
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
+const MAX_MESSAGE_LENGTH = 500;
+const MAX_MOOD_ID_LENGTH = 80;
+const MAX_EMOJI_LENGTH = 32;
+const MAX_COLOR_LENGTH = 40;
+const MAX_HISTORY_ITEMS = 50;
 
 app.use(pinoHttp({ logger }));
 app.use(cors());
@@ -42,9 +48,12 @@ function loadDB() {
 
   try {
     if (fs.existsSync(DATA_PATH)) {
-      return JSON.parse(fs.readFileSync(DATA_PATH, "utf8"));
+      const db = JSON.parse(fs.readFileSync(DATA_PATH, "utf8"));
+      return Array.isArray(db.messages) ? db : { messages: [] };
     }
-  } catch {}
+  } catch (error) {
+    logger.warn({ error, dataPath: DATA_PATH }, "Could not read message store");
+  }
 
   return { messages: [] };
 }
@@ -128,6 +137,39 @@ function sendManifest(res, { startUrl, name, shortName }) {
   res.type("application/manifest+json").send(JSON.stringify(manifest));
 }
 
+function sanitizeText(value, maxLength) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().slice(0, maxLength);
+}
+
+function buildMessageEntry(body) {
+  const message = sanitizeText(body.message, MAX_MESSAGE_LENGTH);
+
+  if (!message) {
+    return {
+      error: "Message is required.",
+      status: 400,
+    };
+  }
+
+  return {
+    entry: {
+      id: Date.now().toString(),
+      moodId: sanitizeText(body.moodId, MAX_MOOD_ID_LENGTH),
+      message,
+      emoji: sanitizeText(body.emoji, MAX_EMOJI_LENGTH),
+      color: sanitizeText(body.color, MAX_COLOR_LENGTH),
+      sentAt: Date.now(),
+      reply: null,
+      replyEmoji: null,
+      replyAt: null,
+    },
+  };
+}
+
 app.get("/", (_req, res) => sendTemplate(res, "landing-page.html"));
 app.get("/for-her", (_req, res) => res.redirect("/receiver"));
 app.get("/for-you", (_req, res) => res.redirect("/sender"));
@@ -166,29 +208,24 @@ app.get("/api/healthz", (_req, res) => {
 });
 
 app.post("/api/send", async (req, res) => {
-  const { moodId, message, emoji, color } = req.body;
+  const { entry, error, status } = buildMessageEntry(req.body);
+
+  if (error) {
+    res.status(status).json({ success: false, error });
+    return;
+  }
+
   const db = loadDB();
-  const entry = {
-    id: Date.now().toString(),
-    moodId,
-    message,
-    emoji,
-    color,
-    sentAt: Date.now(),
-    reply: null,
-    replyEmoji: null,
-    replyAt: null,
-  };
 
   db.messages.unshift(entry);
 
-  if (db.messages.length > 50) {
-    db.messages = db.messages.slice(0, 50);
+  if (db.messages.length > MAX_HISTORY_ITEMS) {
+    db.messages = db.messages.slice(0, MAX_HISTORY_ITEMS);
   }
 
   saveDB(db);
   const appUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
-  await notifyReceiver({ emoji, message, appUrl });
+  await notifyReceiver({ emoji: entry.emoji, message: entry.message, appUrl });
   res.json({ success: true, entry });
 });
 
@@ -197,14 +234,17 @@ app.post("/api/reply", (req, res) => {
   const db = loadDB();
   const message = db.messages.find((item) => item.id === messageId);
 
-  if (message) {
-    message.reply = reply;
-    message.replyEmoji = replyEmoji;
-    message.replyAt = Date.now();
-    saveDB(db);
+  if (!message) {
+    res.status(404).json({ success: false, error: "Message not found." });
+    return;
   }
 
-  res.json({ success: true });
+  message.reply = sanitizeText(reply, MAX_MESSAGE_LENGTH);
+  message.replyEmoji = sanitizeText(replyEmoji, MAX_EMOJI_LENGTH);
+  message.replyAt = Date.now();
+  saveDB(db);
+
+  res.json({ success: true, message });
 });
 
 app.get("/api/latest", (_req, res) => {
@@ -217,11 +257,14 @@ app.get("/api/status", (_req, res) => {
   res.json({ latest: db.messages[0] || null });
 });
 
-app.listen(PORT, (error) => {
-  if (error) {
-    logger.error({ error }, "Failed to start server");
-    process.exit(1);
-  }
+function startServer() {
+  return app.listen(PORT, () => {
+    logger.info({ port: PORT }, "Naztify server listening");
+  });
+}
 
-  logger.info({ port: PORT }, "Naztify server listening");
-});
+if (process.argv[1] === __filename) {
+  startServer();
+}
+
+export { app, buildMessageEntry, loadDB, saveDB, startServer };
