@@ -1,8 +1,17 @@
 # Naztify
 
+[![CI](https://github.com/delbandb/Naztify/actions/workflows/ci.yml/badge.svg)](https://github.com/delbandb/Naztify/actions/workflows/ci.yml)
+
 Naztify is a private real-time mood messenger for two people. It is a small personal web app built with Node.js and Express that lets one person send a mood, message, color, and emoji to a receiver page, with optional OneSignal push notifications for iPhone home-screen usage.
 
 The app is intentionally personal, but the project still demonstrates useful product skills: routing, server-rendered pages, simple persistence, push-notification integration, deployment configuration, and mobile web-app behavior.
+
+## Recruiter Quick Scan
+
+- Built a deployable Node.js and Express app with server-rendered pages and JSON API endpoints.
+- Added input validation, API tests, and GitHub Actions CI for a more production-minded workflow.
+- Integrated optional OneSignal web push behavior and PWA-style manifests for mobile usage.
+- Kept the scope small but complete: routing, persistence, templates, deployment config, tests, and documentation.
 
 ## What It Does
 
